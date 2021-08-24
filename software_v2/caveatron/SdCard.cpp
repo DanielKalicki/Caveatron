@@ -1,6 +1,6 @@
 #include "SdCard.h"
 
-void SdCardClass::setup()
+void TeensySdCard::setup()
 {
   // Open serial communications and wait for port to open:
   Serial.begin(9600);

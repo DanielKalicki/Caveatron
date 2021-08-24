@@ -4,7 +4,7 @@
 #include <SD.h>
 #include <SPI.h>
 
-class SdCardClass {
+class TeensySdCard {
   private:
     // set up variables using the SD utility library functions:
     Sd2Card card;
