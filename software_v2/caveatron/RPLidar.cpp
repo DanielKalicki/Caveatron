@@ -29,6 +29,10 @@
 
 #include "RPLidar.h"
 
+const int lidarRxPin = 34;
+const int lidarTxPin = 33;
+SoftwareSerial lidarSerial(lidarRxPin, lidarTxPin);
+
 RPLidar::RPLidar()
     : _bined_serialdev(NULL)
 {
@@ -45,22 +49,18 @@ RPLidar::~RPLidar()
 }
 
 // open the given serial interface and try to connect to the RPLIDAR
-bool RPLidar::begin(SoftwareSerial &serialobj)
+bool RPLidar::begin()
 {
-    if (isOpen()) {
-      end(); 
-    }
-    _bined_serialdev = &serialobj;
-    _bined_serialdev->end();
-    _bined_serialdev->begin(RPLIDAR_SERIAL_BAUDRATE);
+    pinMode(lidarRxPin, INPUT);
+    pinMode(lidarTxPin, OUTPUT);
+    lidarSerial.begin(115200);
 }
 
 // close the currently opened serial interface
 void RPLidar::end()
 {
     if (isOpen()) {
-       _bined_serialdev->end();
-       _bined_serialdev = NULL;
+       lidarSerial.end();
     }
 }
 
@@ -68,7 +68,8 @@ void RPLidar::end()
 // check whether the serial interface is opened
 bool RPLidar::isOpen()
 {
-    return _bined_serialdev?true:false; 
+    return true;
+    //return lidarSerial.isListening()?true:false; 
 }
 
 // ask the RPLIDAR for its health info
@@ -105,7 +106,7 @@ u_result RPLidar::getHealth(rplidar_response_device_health_t & healthinfo, _u32 
         }
         
         while ((remainingtime=millis() - currentTs) <= timeout) {
-            int currentbyte = _bined_serialdev->read();
+            int currentbyte = lidarSerial.read();
             if (currentbyte < 0) continue;
             
             infobuf[recvPos++] = currentbyte;
@@ -135,26 +136,22 @@ u_result RPLidar::getDeviceInfo(rplidar_response_device_info_t & info, _u32 time
         if (IS_FAIL(ans = _sendCommand(RPLIDAR_CMD_GET_DEVICE_INFO,NULL,0))) {
             return ans;
         }
-    Serial.print("a");
 
         if (IS_FAIL(ans = _waitResponseHeader(&response_header, timeout))) {
             return ans;
         }
-    Serial.print("a");
 
         // verify whether we got a correct header
         if (response_header.type != RPLIDAR_ANS_TYPE_DEVINFO) {
             return RESULT_INVALID_DATA;
         }
-    Serial.print("a");
 
         if (response_header.size < sizeof(rplidar_response_device_info_t)) {
             return RESULT_INVALID_DATA;
         }
-    Serial.print("a");
 
         while ((remainingtime=millis() - currentTs) <= timeout) {
-            int currentbyte = _bined_serialdev->read();
+            int currentbyte = lidarSerial.read();
             if (currentbyte<0) continue;    
             infobuf[recvPos++] = currentbyte;
 
@@ -217,7 +214,7 @@ u_result RPLidar::waitPoint(_u32 timeout)
    _u8 recvPos = 0;
 
    while ((remainingtime=millis() - currentTs) <= timeout) {
-        int currentbyte = _bined_serialdev->read();
+        int currentbyte = lidarSerial.read();
         if (currentbyte<0) continue;
 
         switch (recvPos) {
@@ -276,7 +273,7 @@ u_result RPLidar::_sendCommand(_u8 cmd, const void * payload, size_t payloadsize
     header->cmd_flag = cmd;
 
     // send header first
-    _bined_serialdev->write( (uint8_t *)header, 2);
+    lidarSerial.write((uint8_t *)header, 2);
 
     if (cmd & RPLIDAR_CMDFLAG_HAS_PAYLOAD) {
         checksum ^= RPLIDAR_CMD_SYNC_BYTE;
@@ -290,13 +287,13 @@ u_result RPLidar::_sendCommand(_u8 cmd, const void * payload, size_t payloadsize
 
         // send size
         _u8 sizebyte = payloadsize;
-        _bined_serialdev->write((uint8_t *)&sizebyte, 1);
+        lidarSerial.write((uint8_t *)&sizebyte, 1);
 
         // send payload
-        _bined_serialdev->write((uint8_t *)&payload, sizebyte);
+        lidarSerial.write((uint8_t *)&payload, sizebyte);
 
         // send checksum
-        _bined_serialdev->write((uint8_t *)&checksum, 1);
+        lidarSerial.write((uint8_t *)&checksum, 1);
 
     }
 
@@ -311,7 +308,7 @@ u_result RPLidar::_waitResponseHeader(rplidar_ans_header_t * header, _u32 timeou
     _u8 *headerbuf = (_u8*)header;
     while ((remainingtime=millis() - currentTs) <= timeout) {
         
-        int currentbyte = _bined_serialdev->read();
+        int currentbyte = lidarSerial.read();
         if (currentbyte<0) continue;
         switch (recvPos) {
         case 0:

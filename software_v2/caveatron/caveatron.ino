@@ -38,5 +38,5 @@ void loop(){
     /*sensors.a.x, sensors.a.y, sensors.a.z,*/
     /*sensors.m.x, sensors.m.y, sensors.m.z);*/
   lidar.loop();
-  delay(2000);
+  delay(20);
 }

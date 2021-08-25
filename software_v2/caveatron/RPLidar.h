@@ -54,7 +54,7 @@ public:
     ~RPLidar();
 
     // open the given serial interface and try to connect to the RPLIDAR
-    bool begin(SoftwareSerial &serialobj);
+    bool begin();
 
     // close the currently opened serial interface
     void end();
