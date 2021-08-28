@@ -30,13 +30,13 @@ void setup(){
 }
 
 void loop(){
-  digitalWrite(ledPin, HIGH);
-  delay(1);
-  digitalWrite(ledPin, LOW);
+  /*digitalWrite(ledPin, HIGH);*/
+  /*delay(1);*/
+  /*digitalWrite(ledPin, LOW);*/
   /*sensors.readAcc();*/
   /*snprintf(report, sizeof(report), "A: %6d %6d %6d    M: %6d %6d %6d",*/
     /*sensors.a.x, sensors.a.y, sensors.a.z,*/
     /*sensors.m.x, sensors.m.y, sensors.m.z);*/
   lidar.loop();
-  delay(20);
+  /*delay(20);*/
 }

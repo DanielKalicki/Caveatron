@@ -9,6 +9,8 @@ class CaveatronRplidar {
   public:
     void setup();
     void loop();
+    void printInfo();
+    void printSampleDuration();
 };
 
 #endif
