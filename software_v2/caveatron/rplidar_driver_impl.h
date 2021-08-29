@@ -89,13 +89,15 @@ public:
     u_result startScanNormal(bool force, _u32 timeout = DEFAULT_TIMEOUT);
     u_result checkExpressScanSupported(bool & support, _u32 timeout = DEFAULT_TIMEOUT);
     u_result stop(_u32 timeout = DEFAULT_TIMEOUT);
-    u_result grabScanData(rplidar_response_measurement_node_hq_t * nodebuffer, _u32 timeout = DEFAULT_TIMEOUT);
+    u_result grabScanData(rplidar_response_measurement_node_hq_t * nodebuffer, size_t & count, _u32 timeout = DEFAULT_TIMEOUT);
+    u_result grabScanExpressData(rplidar_response_measurement_node_hq_t * nodebuffer, size_t & count, _u32 timeout = DEFAULT_TIMEOUT);
     u_result ascendScanData(rplidar_response_measurement_node_t * nodebuffer, size_t count);
     u_result ascendScanData(rplidar_response_measurement_node_hq_t * nodebuffer, size_t count);
     u_result getScanDataWithInterval(rplidar_response_measurement_node_t * nodebuffer, size_t & count);
     u_result getScanDataWithIntervalHq(rplidar_response_measurement_node_hq_t * nodebuffer, size_t & count);
-    u_result loopScanData();
 
+    u_result loopScanData();
+    u_result loopScanExpressData();
 
 protected:
 

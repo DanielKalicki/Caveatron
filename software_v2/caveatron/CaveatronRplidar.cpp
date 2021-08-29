@@ -42,19 +42,62 @@ void CaveatronRplidar::loop(){
   static int cnt=0;
   // printInfo();
   // printSampleDuration();
+
+#if 0
   if (!rplidar.isScanning()){
     rplidar.startScanNormal(true);
     analogWrite(lidarMotorPin, 255);
     delay(10);
   }
-  cnt++;
-  if (RESULT_DATA_READY == rplidar.loopScanData()){
-    rplidar_response_measurement_node_hq_t nodes[512];
-    rplidar.grabScanData(nodes);
+  rplidar.loopScanData();
 
-    snprintf(report, sizeof(report), "%d", cnt);
-    Serial.println(report);
-    cnt = 0;
+  rplidar_response_measurement_node_hq_t nodes[512];
+  size_t nodeCount = 512;
+  u_result ans = rplidar.grabScanData(nodes, nodeCount);
+  if (IS_OK(ans)){
+    for (size_t i=0; i<nodeCount; ++i){
+      cnt++;
+      if (nodes[i].flag > 0){
+        snprintf(report, sizeof(report), "%d", cnt);
+        Serial.println(report);
+        cnt = 0;
+      }
+      // snprintf(report, sizeof(report), "%.2f %.2f", (float)nodes[i].dist_mm_q2, (float)nodes[i].angle_z_q14);
+      // Serial.println(report);
+    }
+  }
+#endif
+
+  // std::vector<RplidarScanMode> scanModes;
+  // rplidar.getAllSupportedScanModes(scanModes);
+  // Serial.println("-------");
+  // for(auto const& mode: scanModes) {
+  //   snprintf(report, sizeof(report), "%f %f %s", mode.us_per_sample, mode.max_distance, mode.scan_mode);
+  //   Serial.println(report);
+  // }
+  // delay(1000);
+
+  if (!rplidar.isScanning()){
+    rplidar.startScanExpress(true, RPLIDAR_CONF_SCAN_COMMAND_EXPRESS);
+    analogWrite(lidarMotorPin, 255);
+    delay(10);
+  }
+  rplidar.loopScanExpressData();
+  
+  rplidar_response_measurement_node_hq_t nodes[512];
+  size_t nodeCount = 512;
+  u_result ans = rplidar.grabScanExpressData(nodes, nodeCount);
+  if (IS_OK(ans)){
+    for (size_t i=0; i<nodeCount; ++i){
+      cnt++;
+      if (nodes[i].flag == 1){ // start flag for Express Scan is 1
+        snprintf(report, sizeof(report), "%d", cnt);
+        Serial.println(report);
+        cnt = 0;
+      }
+      // snprintf(report, sizeof(report), "%.2f %.2f", (float)nodes[i].dist_mm_q2, (float)nodes[i].angle_z_q14);
+      // Serial.println(report);
+    }
   }
 }
 

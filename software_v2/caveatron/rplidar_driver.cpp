@@ -156,6 +156,8 @@ u_result RPLidar::_waitResponseHeader(rplidar_ans_header_t * header, _u32 timeou
         }
     }
 
+    Serial.println("waitReponseHeader timeout");
+
     return RESULT_OPERATION_TIMEOUT;
 }
 
@@ -347,10 +349,14 @@ u_result RPLidar::_waitCapsuledNode(rplidar_response_capsule_measurement_nodes_t
     _u8 *nodeBuffer = (_u8*)&node;
     _u32 waitTime;
 
-
    while ((waitTime=millis() - startTs) <= timeout) {
         size_t remainSize = sizeof(rplidar_response_capsule_measurement_nodes_t) - recvPos;
-        size_t recvSize;
+
+        int currentbyte = lidarSerial.read();
+        if (currentbyte<0) continue;
+        recvBuffer[0] = currentbyte;
+        size_t recvSize=1;
+        // Serial.println(recvBuffer[0]);  
 
         // TODO
         // bool ans = _chanDev->waitfordata(remainSize, timeout-waitTime, &recvSize);
@@ -522,32 +528,49 @@ u_result RPLidar::loopScanData()
 
     convert(node, nodeHq);
     _cached_scan_node_hq_buf[_cached_scan_node_hq_count++] = nodeHq;
-    if (_cached_scan_node_hq_count >= sizeof(_cached_scan_node_hq_buf)/sizeof(nodeHq)){
+    if (_cached_scan_node_hq_count >= _countof(_cached_scan_node_hq_buf)){
         _cached_scan_node_hq_count = 0;
     }
 
-    // char report[30];
-    // float distance = node.distance_q2/4.0f;
-    // float  angle = (node.angle_q6_checkbit >> RPLIDAR_RESP_MEASUREMENT_ANGLE_SHIFT)/64.0f;
-    // _u8  quality = (node.sync_quality>>RPLIDAR_RESP_MEASUREMENT_QUALITY_SHIFT);
-    // bool  startBit = (node.sync_quality & RPLIDAR_RESP_MEASUREMENT_SYNCBIT);
-    // snprintf(report, sizeof(report), "%.2f %.2f %d", distance, angle, quality);
-    // Serial.println(report);
-
-    if (nodeHq.flag == RPLIDAR_RESP_MEASUREMENT_SYNCBIT){
-        return RESULT_DATA_READY;
-    }
-    else {
-        return RESULT_DATA_NOT_READY;
-    }
+    return RESULT_OK;
 }
 
-u_result RPLidar::grabScanData(rplidar_response_measurement_node_hq_t * nodebuffer, _u32 timeout)
+u_result RPLidar::loopScanExpressData()
+{
+    static uint16_t recvNodeCount = 0;
+    u_result ans;
+    rplidar_response_capsule_measurement_nodes_t capsule_node;
+    rplidar_response_measurement_node_hq_t nodesHq[512];
+
+    if (IS_FAIL(ans = _waitCapsuledNode(capsule_node, DEFAULT_TIMEOUT))) {
+        _isScanning = false;
+        return RESULT_OPERATION_FAIL;
+    }
+
+    size_t count = 512;
+    _capsuleToNormal(capsule_node, nodesHq, count);
+
+    for (size_t pos=0; pos < count; ++pos){
+        _cached_scan_node_hq_buf[_cached_scan_node_hq_count++] = nodesHq[pos];
+        if (_cached_scan_node_hq_count >= _countof(_cached_scan_node_hq_buf)){
+            _cached_scan_node_hq_count = 0;
+        }
+    }
+    return RESULT_OK;
+}
+
+u_result RPLidar::grabScanData(rplidar_response_measurement_node_hq_t * nodebuffer, size_t & count, _u32 timeout)
 {
     if (_cached_scan_node_hq_count == 0) return RESULT_OPERATION_TIMEOUT; //consider as timeout
+    size_t size_to_copy = min(count, _cached_scan_node_hq_count);
     memcpy(nodebuffer, _cached_scan_node_hq_buf, _cached_scan_node_hq_count * sizeof(rplidar_response_measurement_node_hq_t));
+    count = size_to_copy;
     _cached_scan_node_hq_count = 0;
     return RESULT_OK;
+}
+u_result RPLidar::grabScanExpressData(rplidar_response_measurement_node_hq_t * nodebuffer, size_t & count, _u32 timeout)
+{
+    return grabScanData(nodebuffer, count, timeout);
 }
 
 u_result RPLidar::startScanNormal(bool force, _u32 timeout)
@@ -638,70 +661,6 @@ int RPLidar::_getSyncBitByAngle(const int current_angle_q16, const int angleInc_
     }
     last_angleInc_q16 = current_angleInc_q16;
     return syncBit;
-}
-
-u_result RPLidar::_cacheCapsuledScanData()
-{
-    rplidar_response_capsule_measurement_nodes_t    capsule_node;
-    rplidar_response_measurement_node_hq_t   local_buf[512];
-    size_t                                   count = 512;
-    rplidar_response_measurement_node_hq_t   local_scan[MAX_SCAN_NODES];
-    size_t                                   scan_count = 0;
-    u_result                                 ans;
-    memset(local_scan, 0, sizeof(local_scan));
-
-    _waitCapsuledNode(capsule_node); // // always discard the first data since it may be incomplete
-    
-    while(_isScanning)
-    {
-        if (IS_FAIL(ans=_waitCapsuledNode(capsule_node))) {
-            if (ans != RESULT_OPERATION_TIMEOUT && ans != RESULT_INVALID_DATA) {
-                _isScanning = false;
-                return RESULT_OPERATION_FAIL;
-            } else {
-                // current data is invalid, do not use it.
-                continue;
-            }
-        }
-        switch (_cached_express_flag) 
-        {
-        case 0:
-            _capsuleToNormal(capsule_node, local_buf, count);
-            break;
-        case 1:
-            _dense_capsuleToNormal(capsule_node, local_buf, count);
-            break;
-        }
-        //
-        
-        for (size_t pos = 0; pos < count; ++pos)
-        {
-            if (local_buf[pos].flag & RPLIDAR_RESP_MEASUREMENT_SYNCBIT)
-            {
-                // only publish the data when it contains a full 360 degree scan 
-                
-                if ((local_scan[0].flag & RPLIDAR_RESP_MEASUREMENT_SYNCBIT)) {
-                    // _lock.lock();
-                    memcpy(_cached_scan_node_hq_buf, local_scan, scan_count*sizeof(rplidar_response_measurement_node_hq_t));
-                    _cached_scan_node_hq_count = scan_count;
-                    // _dataEvt.set();
-                    // _lock.unlock();
-                }
-                scan_count = 0;
-            }
-            local_scan[scan_count++] = local_buf[pos];
-            if (scan_count == _countof(local_scan)) scan_count-=1; // prevent overflow
-
-            //for interval retrieve
-            {
-                _cached_scan_node_hq_buf_for_interval_retrieve[_cached_scan_node_hq_count_for_interval_retrieve++] = local_buf[pos];
-                if(_cached_scan_node_hq_count_for_interval_retrieve == _countof(_cached_scan_node_hq_buf_for_interval_retrieve)) _cached_scan_node_hq_count_for_interval_retrieve-=1; // prevent overflow
-            }
-        }
-    }
-    _isScanning = false;
-
-    return RESULT_OK;
 }
 
 u_result RPLidar::_cacheUltraCapsuledScanData()
@@ -1245,6 +1204,7 @@ u_result RPLidar::checkSupportConfigCommands(bool& outSupport, _u32 timeoutInMs)
     return ans;
 }
 
+// TODO
 u_result RPLidar::getLidarConf(_u32 type, std::vector<_u8> &outputBuf, const std::vector<_u8> &reserve, _u32 timeout)
 {
     rplidar_payload_get_scan_conf_t query;
@@ -1287,15 +1247,31 @@ u_result RPLidar::getLidarConf(_u32 type, std::vector<_u8> &outputBuf, const std
 
         std::vector<_u8> dataBuf;
         // TODO
-        // dataBuf.resize(header_size);
+        dataBuf.resize(header_size);
         // _chanDev->recvdata(reinterpret_cast<_u8 *>(&dataBuf[0]), header_size);
 
-        //check if returned type is same as asked type
-        _u32 replyType = -1;
-        memcpy(&replyType, &dataBuf[0], sizeof(type));
-        if (replyType != type) {
-            return RESULT_INVALID_DATA;
+        _u8 *infobuf = (_u8*)&dataBuf;
+        _u32 remainingtime;
+        _u32 currentTs = millis();
+        _u8  recvPos = 0;
+        while ((remainingtime=millis() - currentTs) <= timeout) {
+            int currentbyte = lidarSerial.read();
+            if (currentbyte<0) continue;    
+            infobuf[recvPos++] = currentbyte;
+
+            if (recvPos == header_size) {
+                break;
+            }
         }
+        Serial.println("z");
+
+        //check if returned type is same as asked type
+        // _u32 replyType = -1;
+        // memcpy(&replyType, &dataBuf[0], sizeof(type));
+        // if (replyType != type) {
+        //     return RESULT_INVALID_DATA;
+        // }
+        Serial.println("x");
 
         //copy all the payload into &outputBuf
         int payLoadLen = header_size - sizeof(type);
@@ -1307,6 +1283,7 @@ u_result RPLidar::getLidarConf(_u32 type, std::vector<_u8> &outputBuf, const std
         //copy all payLoadLen bytes to outputBuf
         outputBuf.resize(payLoadLen);
         memcpy(&outputBuf[0], &dataBuf[0] + sizeof(type), payLoadLen);
+        Serial.println("y");
     }
     return ans;
 }
@@ -1424,6 +1401,7 @@ u_result RPLidar::getScanModeName(char* modeName, _u16 scanModeID, _u32 timeoutI
     return ans;
 }
 
+// TODO
 u_result RPLidar::getAllSupportedScanModes(std::vector<RplidarScanMode>& outModes, _u32 timeoutInMs)
 {
     u_result ans;
@@ -1443,6 +1421,7 @@ u_result RPLidar::getAllSupportedScanModes(std::vector<RplidarScanMode>& outMode
         // 2. for loop to get all fields of each scan mode
         for (_u16 i = 0; i < modeCount; i++)
         {
+            Serial.println("_");
             RplidarScanMode scanModeInfoTmp;
             memset(&scanModeInfoTmp, 0, sizeof(scanModeInfoTmp));
             scanModeInfoTmp.id = i;
@@ -1507,10 +1486,12 @@ u_result RPLidar::getScanModeCount(_u16& modeCount, _u32 timeoutInMs)
     u_result ans;
     std::vector<_u8> answer;
     ans = getLidarConf(RPLIDAR_CONF_SCAN_MODE_COUNT, answer, std::vector<_u8>(), timeoutInMs);
+    Serial.println("b-");
 
     if (IS_FAIL(ans)) {
         return ans;
     }
+    Serial.println("b");
     if (answer.size() < sizeof(_u16)) {
         return RESULT_INVALID_DATA;
     }
@@ -1519,7 +1500,6 @@ u_result RPLidar::getScanModeCount(_u16& modeCount, _u32 timeoutInMs)
 
     return ans;
 }
-
 
 u_result RPLidar::startScan(bool force, bool useTypicalScan, _u32 options, RplidarScanMode* outUsedScanMode)
 {
@@ -1619,8 +1599,9 @@ u_result RPLidar::startScanExpress(bool force, _u16 scanMode, _u32 options, Rpli
 
     
     bool ifSupportLidarConf = false;
-    ans = checkSupportConfigCommands(ifSupportLidarConf);
-    if (IS_FAIL(ans)) return RESULT_INVALID_DATA;
+    // TODO
+    // ans = checkSupportConfigCommands(ifSupportLidarConf);
+    // if (IS_FAIL(ans)) return RESULT_INVALID_DATA;
 
     if (outUsedScanMode)
     {
@@ -1684,6 +1665,10 @@ u_result RPLidar::startScanExpress(bool force, _u16 scanMode, _u32 options, Rpli
             scanReq.working_mode = _u8(scanMode);
         scanReq.working_flags = options;
 
+        char report[30];
+        snprintf(report, sizeof(report), "%d", scanMode);
+        Serial.println(report);
+
         if (IS_FAIL(ans = _sendCommand(RPLIDAR_CMD_EXPRESS_SCAN, &scanReq, sizeof(scanReq)))) {
             return ans;
         }
@@ -1733,6 +1718,7 @@ u_result RPLidar::startScanExpress(bool force, _u16 scanMode, _u32 options, Rpli
             }
             _isScanning = true;
             // _cachethread = CLASS_THREAD(RPLidar, _cacheUltraCapsuledScanData);
+            Serial.println("UlraCapsuledData");
         }
 
         // if (_cachethread.getHandle() == 0) {
@@ -2004,7 +1990,7 @@ u_result RPLidar::_sendCommand(_u8 cmd, const void * payload, size_t payloadsize
         lidarSerial.write((uint8_t *)&sizebyte, 1);
 
         // send payload
-        lidarSerial.write((uint8_t *)&payload, sizebyte);
+        lidarSerial.write((uint8_t *)payload, sizebyte);
 
         // send checksum
         lidarSerial.write((uint8_t *)&checksum, 1);
